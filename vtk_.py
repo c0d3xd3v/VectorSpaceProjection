@@ -12,7 +12,7 @@ def create_light_source_at_camera(renderer, camera):
     light2.SetFocalPoint(0, 0, 0)
     light2.SetPosition(2.0, -3.0, -4.0)
     light2.SetColor(colors.GetColor3d('100W Tungsten'))
-    light2.SetIntensity(0.25)
+    light2.SetIntensity(0.5)
     renderer.AddLight(light2)
 
     # Function to update light position
@@ -34,6 +34,10 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     # VTK Visualization
     renderer = vtk.vtkRenderer()
     renderer.SetBackground(1,1,1)  # Hintergrundfarbe auf weiß setzen
+    # Konfiguriere Depth Testing
+    renderer.SetUseDepthPeeling(True)
+    renderer.SetMaximumNumberOfPeels(4)
+    renderer.SetOcclusionRatio(0.1)
 
     cam = renderer.GetActiveCamera()
     cam.SetViewUp(camera_position)
@@ -43,8 +47,9 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     #renderer.AddActor(cube_axes_actor)
 
     for actor in actors:
-        actor.GetProperty().SetAmbient(0.7)
-        actor.GetProperty().SetDiffuse(0.9)
+        actor.GetProperty().SetAmbient(0.6)
+        actor.GetProperty().SetDiffuse(0.7)
+        #actor.GetProperty().SetOpacity(0.5)
         renderer.AddActor(actor)
 
     # Renderer-Instanz erstellen
@@ -56,10 +61,6 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     render_window_interactor = vtk.vtkRenderWindowInteractor()
     render_window_interactor.SetRenderWindow(render_window)
 
-    # Konfiguriere Depth Testing
-    renderer.SetUseDepthPeeling(True)
-    renderer.SetMaximumNumberOfPeels(100)
-    renderer.SetOcclusionRatio(100.5)
 
     light, update_light_position = create_light_source_at_camera(renderer, renderer.GetActiveCamera())
 
@@ -78,7 +79,10 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     renderer.SetPass(cameraP)
 
     render_window.SetMultiSamples(8)
+    render_window.Render()
     # Starten Sie das Rendering
+    # create_bounding_box_ground_plane(renderer)
+
     render_window.Render()
     render_window_interactor.Start()
 
@@ -120,6 +124,77 @@ def createCubeAxesActor(renderer):
 
     return cube_axes_actor
 
+def compute_normal(v1, v2):
+    # Calculate the normal vector using the cross product
+    cross_product = np.cross(v1, v2)
+    norm = np.linalg.norm(cross_product)
+    if norm == 0:
+        return np.array([0, 0, 1])  # Default normal if cross product is zero
+    return cross_product / norm  # Normalize the normal vector
+
+
+def create_bounding_box_ground_plane(renderer):
+    # Initialize bounds for the entire scene (actors)
+    bounds = [float('inf'), -float('inf'), float('inf'), -float('inf'), float('inf'), -float('inf')]
+
+    # Iterate over all actors to get the collective bounding box
+    actors = renderer.GetActors()
+    actors.InitTraversal()
+
+    for i in range(actors.GetNumberOfItems()):
+        actor = actors.GetNextActor()
+        actor_bounds = actor.GetBounds()
+
+        s = 4.0
+        # Update the global bounds
+        bounds[0] = min(bounds[0], s*actor_bounds[0])  # X min
+        bounds[1] = max(bounds[1], s*actor_bounds[1])  # X max
+        bounds[2] = min(bounds[2], s*actor_bounds[2])  # Y min
+        bounds[3] = max(bounds[3], s*actor_bounds[3])  # Y max
+        bounds[4] = min(bounds[4], s*actor_bounds[4])  # Z min (ground)
+        bounds[5] = max(bounds[5], s*actor_bounds[5])  # Z max
+
+    offset = 0.1
+
+    # Create a plane at the Z-min (bottom of the bounding box)
+    plane = vtk.vtkPlaneSource()
+    plane.SetOrigin(bounds[0], bounds[2], bounds[4] - offset)  # Bottom-left corner at Z-min
+    plane.SetPoint1(bounds[1], bounds[2], bounds[4] - offset)  # Bottom-right corner at Z-min
+    plane.SetPoint2(bounds[0], bounds[3], bounds[4] - offset)  # Top-left corner at Z-min
+    plane.SetResolution(10, 10)
+
+    # Create a mapper and actor for the plane
+    plane_mapper = vtk.vtkPolyDataMapper()
+    plane_mapper.SetInputConnection(plane.GetOutputPort())
+
+    plane_actor = vtk.vtkActor()
+    plane_actor.SetMapper(plane_mapper)
+
+    # Get the points defining the plane
+    origin = np.array([bounds[0], bounds[2], bounds[4] - offset])
+    point1 = np.array([bounds[1], bounds[2], bounds[4] - offset])
+    point2 = np.array([bounds[0], bounds[3], bounds[4] - offset])
+
+    # Compute vectors from the origin
+    vec1 = point1 - origin
+    vec2 = point2 - origin
+
+    # Compute normal
+    normal = compute_normal(vec1, vec2)
+    plane.SetNormal(normal)
+
+    # Get the background color from the renderer
+    #background_color = renderer.GetBackground()
+
+    # Set the plane's color to match the background
+    plane_actor.GetProperty().SetColor(1.0, 1.0, 1.0)
+    plane_actor.GetProperty().SetAmbient(0.7)
+    plane_actor.GetProperty().SetDiffuse(0.9)
+    #plane_actor.GetProperty().SetOpacity(0.5)  # 50% transparency
+
+    plane_actor.Modified()
+    # Add the plane to the renderer
+    renderer.AddActor(plane_actor)
 
 def create_arrow_actor(start_point, end_point, color):
     # Erstellen der Pfeilquelle
@@ -211,15 +286,67 @@ def create_plane_actor(n, point, color):
     return actor
 
 
-def add_plane(renderer, n, color_plane):
-    # Erstellen Sie die Linien für die Vektoren
-    c2 = color_plane
-    c2 = [
-    (c2[0] + 1) * 0.5,
-    (c2[1] + 1) * 0.5,
-    (c2[2] + 1) * 0.5]
+def create_mesh_actor_with_normals(vertices, triangles, vertex_normals):
+    # Create a vtkPoints object and set the points from the vertices
+    points = vtk.vtkPoints()
+    for vertex in vertices:
+        points.InsertNextPoint(vertex)
 
-    # Erstellen Sie die Ebene
-    actor_plane = create_plane_actor(n, [0.0, 0.0, 0.0], color_plane)
-    renderer.AddActor(actor_plane)
+    # Create a vtkCellArray object to store the triangles
+    triangles_vtk = vtk.vtkCellArray()
+    for triangle in triangles:
+        triangle_vtk = vtk.vtkTriangle()
+        triangle_vtk.GetPointIds().SetId(0, triangle[0])
+        triangle_vtk.GetPointIds().SetId(1, triangle[1])
+        triangle_vtk.GetPointIds().SetId(2, triangle[2])
+        triangles_vtk.InsertNextCell(triangle_vtk)
+
+    # Create a vtkPolyData object to store the mesh
+    poly_data = vtk.vtkPolyData()
+    poly_data.SetPoints(points)
+    poly_data.SetPolys(triangles_vtk)
+
+    # Create a mapper and actor for the mesh
+    mesh_mapper = vtk.vtkPolyDataMapper()
+    mesh_mapper.SetInputData(poly_data)
+
+    mesh_actor = vtk.vtkActor()
+    mesh_actor.SetMapper(mesh_mapper)
+
+    # Create a vtkArrowSource to represent normals as arrows
+    arrow_source = vtk.vtkArrowSource()
+    arrow_source.SetTipResolution(64)
+    arrow_source.SetShaftResolution(64)
+
+    # Create a vtkPoints object to store the arrow positions (same as vertices)
+    normal_points = vtk.vtkPoints()
+    normal_vectors = vtk.vtkDoubleArray()
+    normal_vectors.SetNumberOfComponents(3)  # 3D vectors
+
+    for i in range(len(vertices)):
+        normal_points.InsertNextPoint(vertices[i])
+        normal_vectors.InsertNextTuple(vertex_normals[i])
+
+    # Create polydata for the glyphs (normals visualization)
+    normals_polydata = vtk.vtkPolyData()
+    normals_polydata.SetPoints(normal_points)
+    normals_polydata.GetPointData().SetVectors(normal_vectors)
+
+    # Use vtkGlyph3D to generate arrows at each vertex position along the normal
+    glyph = vtk.vtkGlyph3D()
+    glyph.SetSourceConnection(arrow_source.GetOutputPort())
+    glyph.SetInputData(normals_polydata)
+    glyph.SetVectorModeToUseVector()  # Use the normals stored in the polydata
+    glyph.SetScaleFactor(0.1)  # Scale the arrows
+    glyph.OrientOn()  # Align arrows with normals
+
+    # Create a mapper and actor for the arrows (normals)
+    arrow_mapper = vtk.vtkPolyDataMapper()
+    arrow_mapper.SetInputConnection(glyph.GetOutputPort())
+
+    arrow_actor = vtk.vtkActor()
+    arrow_actor.SetMapper(arrow_mapper)
+    arrow_actor.GetProperty().SetColor(1.0, 0.5, 0.5)  # Set arrow color to red
+
+    return mesh_actor, arrow_actor
 

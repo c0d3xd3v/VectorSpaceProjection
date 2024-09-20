@@ -34,7 +34,7 @@ def transform_vector(v, normal, matrix):
 
 
 # Beispielvektor und Normale
-v = np.array([0,0,1])
+v = np.array([1,-1,0.75])
 v = v/np.linalg.norm(v)
 normal = np.array([0.0, 0.0, 1.0])
 
