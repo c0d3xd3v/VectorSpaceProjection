@@ -1,0 +1,10 @@
+.idea/misc.xml
+.idea/modules.xml
+.idea/vcs.xml
+.idea/VectorSpaceProjection.iml
+.idea/inspectionProfiles/profiles_settings.xml
+/shelf/
+/workspace.xml
+data/plane.mtl
+data/bunny.obj
+__pycache__/
