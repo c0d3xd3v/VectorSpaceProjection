@@ -1,34 +1,6 @@
-import numpy as np
 import vtk
-
-def create_light_source_at_camera(renderer, camera):
-    """Creates a light source and positions it at the camera's position."""
-    # Create a light source
-    colors = vtk.vtkNamedColors()
-    colors.SetColor('HighNoonSun', [255, 255, 251, 255])  # Color temp. 5400°K
-    colors.SetColor('100W Tungsten', [255, 214, 170, 255])  # Color temp. 2850°K
-
-    light2 = vtk.vtkLight()
-    light2.SetFocalPoint(0, 0, 0)
-    light2.SetPosition(2.0, -3.0, -4.0)
-    light2.SetColor(colors.GetColor3d('100W Tungsten'))
-    light2.SetIntensity(0.5)
-    renderer.AddLight(light2)
-
-    # Function to update light position
-    def update_light_position(*args):
-        #print("update")
-        light_position = camera.GetPosition()
-        light_position += np.array([3.5, 1.5, 1.0])
-        light2.SetPosition(light_position)
-        renderer.GetRenderWindow().Render()  # Re-render to apply the changes
-
-    # Set the initial position
-    #update_light_position()
-    camera.AddObserver('ModifiedEvent', update_light_position)
-
-    return light2, update_light_position
-
+import geo
+import numpy as np
 
 def render_actors(actors, camera_position=[1, 0, 0]):
     # VTK Visualization
@@ -42,25 +14,24 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     cam = renderer.GetActiveCamera()
     cam.SetViewUp(camera_position)
 
-    # Renderer hinzufügen
-    cube_axes_actor = createCubeAxesActor(renderer)
-    #renderer.AddActor(cube_axes_actor)
-
     for actor in actors:
-        actor.GetProperty().SetAmbient(0.6)
-        actor.GetProperty().SetDiffuse(0.7)
-        #actor.GetProperty().SetOpacity(0.5)
+        actor.GetProperty().SetAmbient(0.7)
+        actor.GetProperty().SetDiffuse(0.5)
         renderer.AddActor(actor)
 
     # Renderer-Instanz erstellen
     render_window = vtk.vtkRenderWindow()
+    width, height = 800, 800
+    render_window.SetSize(width, height)
+    viewport_max_sizes = render_window.GetScreenSize()
+    render_window.SetPosition(int(viewport_max_sizes[0]/2 - width), int(viewport_max_sizes[1]/2 - height))
+    print(viewport_max_sizes)
     render_window.AddRenderer(renderer)
-    #renderer.UseFXAAOn()
 
     # RenderWindowInteractor erstellen
     render_window_interactor = vtk.vtkRenderWindowInteractor()
     render_window_interactor.SetRenderWindow(render_window)
-
+    render_window_interactor.SetInteractorStyle(vtk.vtkInteractorStyleTrackballCamera())
 
     light, update_light_position = create_light_source_at_camera(renderer, renderer.GetActiveCamera())
 
@@ -74,63 +45,40 @@ def render_actors(actors, camera_position=[1, 0, 0]):
 
     cameraP = vtk.vtkCameraPass()
     cameraP.SetDelegatePass(seq)
-
-    # Tell the renderer to use our render pass pipeline
+    
     renderer.SetPass(cameraP)
 
     render_window.SetMultiSamples(8)
     render_window.Render()
-    # Starten Sie das Rendering
-    # create_bounding_box_ground_plane(renderer)
+    renderer.ResetCamera()
 
     render_window.Render()
     render_window_interactor.Start()
 
 
-def createCubeAxesActor(renderer):
-    # CubeAxesActor erstellen
-    cube_axes_actor = vtk.vtkCubeAxesActor()
-    cube_axes_actor.SetCamera(renderer.GetActiveCamera())
-    cube_axes_actor.SetXTitle("X-Axis")
-    cube_axes_actor.SetYTitle("Y-Axis")
-    cube_axes_actor.SetZTitle("Z-Axis")
-    cube_axes_actor.SetFlyModeToOuterEdges()
-    # Achsen- und Schriftfarbe auf schwarz setzen
-    cube_axes_actor.SetDrawXGridlines(True)
-    cube_axes_actor.SetDrawYGridlines(True)
-    cube_axes_actor.SetDrawZGridlines(True)
+def create_light_source_at_camera(renderer, camera):
+    """Creates a light source and positions it at the camera's position."""
 
-    b = 0.5
-    cube_axes_actor.SetBounds(-b, b, -b, b, -b, b)
+    colors = vtk.vtkNamedColors()
+    colors.SetColor('HighNoonSun', [255, 255, 251, 255])  # Color temp. 5400°K
+    colors.SetColor('100W Tungsten', [255, 214, 170, 255])  # Color temp. 2850°K
 
-    cube_axes_actor.GetXAxesLinesProperty().SetColor(0.0, 0.0, 0.0)
-    cube_axes_actor.GetYAxesLinesProperty().SetColor(0.0, 0.0, 0.0)
-    cube_axes_actor.GetZAxesLinesProperty().SetColor(0.0, 0.0, 0.0)
+    light = vtk.vtkLight()
+    light.SetFocalPoint(0, 0, 0)
+    light.SetPosition(0.0, -3.0, 0.0)
+    light.SetColor(colors.GetColor3d('100W Tungsten'))
+    light.SetIntensity(0.25)
+    renderer.AddLight(light)
 
-    cube_axes_actor.GetXAxesGridlinesProperty().SetColor(0, 0,0)
-    cube_axes_actor.GetYAxesGridlinesProperty().SetColor(0, 0,0)
-    cube_axes_actor.GetZAxesGridlinesProperty().SetColor(0, 0,0)
+    def update_light_position(*args):
+        light_position = camera.GetPosition()
+        light_position += np.array([0.1, 0.1, 0.1])
+        light.SetPosition(light_position[0], light_position[1], light_position[2])
+        renderer.GetRenderWindow().Render()  # Re-render to apply the changes
 
-    cube_axes_actor.GetTitleTextProperty(0).SetColor(0.0, 0.0, 0.0)
-    cube_axes_actor.GetTitleTextProperty(1).SetColor(0.0, 0.0, 0.0)
-    cube_axes_actor.GetTitleTextProperty(2).SetColor(0.0, 0.0, 0.0)
+    camera.AddObserver('ModifiedEvent', update_light_position)
 
-    cube_axes_actor.GetLabelTextProperty(0).SetColor(0.0, 0.0, 0.0)
-    cube_axes_actor.GetLabelTextProperty(1).SetColor(0.0, 0.0, 0.0)
-    cube_axes_actor.GetLabelTextProperty(2).SetColor(0.0, 0.0, 0.0)
-
-    cube_axes_actor.SetGridLineLocation(cube_axes_actor.VTK_GRID_LINES_FURTHEST)
-
-
-    return cube_axes_actor
-
-def compute_normal(v1, v2):
-    # Calculate the normal vector using the cross product
-    cross_product = np.cross(v1, v2)
-    norm = np.linalg.norm(cross_product)
-    if norm == 0:
-        return np.array([0, 0, 1])  # Default normal if cross product is zero
-    return cross_product / norm  # Normalize the normal vector
+    return light, update_light_position
 
 
 def create_bounding_box_ground_plane(renderer):
@@ -145,7 +93,7 @@ def create_bounding_box_ground_plane(renderer):
         actor = actors.GetNextActor()
         actor_bounds = actor.GetBounds()
 
-        s = 4.0
+        s = 2.0
         # Update the global bounds
         bounds[0] = min(bounds[0], s*actor_bounds[0])  # X min
         bounds[1] = max(bounds[1], s*actor_bounds[1])  # X max
@@ -180,8 +128,8 @@ def create_bounding_box_ground_plane(renderer):
     vec2 = point2 - origin
 
     # Compute normal
-    normal = compute_normal(vec1, vec2)
-    plane.SetNormal(normal)
+    normal = geo.compute_normal(vec1, vec2)
+    plane.SetNormal(normal[0], normal[1], normal[2])
 
     # Get the background color from the renderer
     #background_color = renderer.GetBackground()
@@ -286,7 +234,7 @@ def create_plane_actor(n, point, color):
     return actor
 
 
-def create_mesh_actor_with_normals(vertices, triangles, vertex_normals):
+def create_mesh_and_vectorfield_actors(vertices, triangles, vertex_normals):
     # Create a vtkPoints object and set the points from the vertices
     points = vtk.vtkPoints()
     for vertex in vertices:
@@ -315,8 +263,8 @@ def create_mesh_actor_with_normals(vertices, triangles, vertex_normals):
 
     # Create a vtkArrowSource to represent normals as arrows
     arrow_source = vtk.vtkArrowSource()
-    arrow_source.SetTipResolution(64)
-    arrow_source.SetShaftResolution(64)
+    arrow_source.SetTipResolution(16)
+    arrow_source.SetShaftResolution(16)
 
     # Create a vtkPoints object to store the arrow positions (same as vertices)
     normal_points = vtk.vtkPoints()
