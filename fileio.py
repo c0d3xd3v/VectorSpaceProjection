@@ -4,6 +4,8 @@ import vtk
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy
 
+import xml.etree.ElementTree as ET
+
 
 def load_triangle_mesh(filepath):
     # Load the mesh using libigl
@@ -53,3 +55,38 @@ def load_mesh_vtk_unstructured_grid(filepath):
         print(f"Stored {array_name} as {data_type} with shape {numpy_array.shape}")
 
     return vertices.tolist(), triangles.tolist(), point_data_arrays
+
+
+# Funktion zum Erstellen eines vtkColorTransferFunction aus XML
+def create_vtk_color_transfer_function_from_xml(xml_filename):
+    colorTransferFunction = vtk.vtkColorTransferFunction()
+    
+    tree = ET.parse(xml_filename)
+    root = tree.getroot()
+    
+    for point in root.iter("Point"):
+        x = float(point.get("x"))
+        r = float(point.get("r"))
+        g = float(point.get("g"))
+        b = float(point.get("b"))
+        colorTransferFunction.AddRGBPoint(x, r, g, b)
+    
+    color_steps = 32
+    # Erstellen einer VTK-Lookup-Tabelle (LookupTable) 
+    # basierend auf der Farbtransferfunktion
+    lut = vtk.vtkLookupTable()
+    # Anzahl der Werte in der LUT (z.B. 256 für 8-Bit Farbtiefe)
+    lut.SetNumberOfTableValues(color_steps)
+    lut.Build()
+    # Anwenden der Farbtransferfunktion auf die Lookup-Tabelle
+    for i in range(color_steps):
+        # Skalieren auf den Bereich [0, 1]
+        x = i / (color_steps - 1.0) 
+        color = colorTransferFunction.GetColor(x)
+        # Alpha auf 1.0 (undurchsichtig) festlegen
+        lut.SetTableValue(i, color[0], color[1], color[2], 1.0)
+
+    colorTransferFunction.SetVectorModeToMagnitude()
+    lut.SetVectorModeToMagnitude()
+    
+    return lut

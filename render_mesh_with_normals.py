@@ -5,10 +5,13 @@ import fileio
 
 
 filepath = sys.argv[1]
-#vertices, triangles = fileio.load_mesh_with_libigl(filepath)
-vertices, triangles, nodeData = fileio.load_mesh_vtk_unstructured_grid("/home/kai/Development/github/VibroAcoustic/output.vtk")
+vertices, triangles, nodeData = fileio.load_mesh_vtk_unstructured_grid(filepath)
 vertex_normals = geo.compute_vertex_normals(vertices, triangles)
 
-mesh_actor, arrow_actor = vtk_.create_mesh_and_vectorfield_actors(vertices, triangles, nodeData['eigenmode1'])
-actors = [mesh_actor, arrow_actor]
+colormap = fileio.create_vtk_color_transfer_function_from_xml('data/colormap.xml')
+mesh_actor = vtk_.create_mesh_actor(vertices, triangles, nodeData['eigenmode5'], colormap)
+vectorfield_actor = vtk_.create_vectorfield_actor(vertices, nodeData['eigenmode5'])
+normalfield_actor = vtk_.create_vectorfield_actor(vertices, vertex_normals)
+
+actors = [mesh_actor, vectorfield_actor, normalfield_actor]
 vtk_.render_actors(actors)

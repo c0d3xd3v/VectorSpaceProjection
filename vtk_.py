@@ -2,6 +2,8 @@ import vtk
 import geo
 import numpy as np
 
+from vtkmodules.util.numpy_support import numpy_to_vtk
+
 def render_actors(actors, camera_position=[1, 0, 0]):
     # VTK Visualization
     renderer = vtk.vtkRenderer()
@@ -68,7 +70,7 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     render_window_interactor.Start()
 
 
-def create_light_source_at_camera(renderer, camera):
+def create_light_source_at_camera(renderer, camera, offset=[0.1, 0.1, 0.1]):
     """Creates a light source and positions it at the camera's position."""
     colors = vtk.vtkNamedColors()
 
@@ -78,7 +80,7 @@ def create_light_source_at_camera(renderer, camera):
 
     light = vtk.vtkLight()
     light.SetFocalPoint(0, 0, 0)
-    light_position = np.array(camera.GetPosition()) + np.array([0.1, 0.1, 0.1])
+    light_position = np.array(camera.GetPosition()) + np.array(offset)
     light.SetPosition(light_position[0], light_position[1], light_position[2])
     light.SetColor(colors.GetColor3d('WarmLight'))  # Warm light for a nice contrast
     light.SetIntensity(1.1)  # Slightly stronger light
@@ -86,7 +88,7 @@ def create_light_source_at_camera(renderer, camera):
 
     # Adjust light position dynamically if the camera moves
     def update_light_position(*args):
-        light_position = np.array(camera.GetPosition()) + np.array([0.1, 0.1, 0.1])
+        light_position = np.array(camera.GetPosition()) + np.array(offset)
         light.SetPosition(light_position[0], light_position[1], light_position[2])
         renderer.GetRenderWindow().Render()  # Re-render to apply changes
 
@@ -249,7 +251,7 @@ def create_plane_actor(n, point, color):
     return actor
 
 
-def create_mesh_and_vectorfield_actors(vertices, triangles, vertex_normals):
+def create_mesh_actor(vertices, triangles, nodeData=None, colormap=None):
     # Create a vtkPoints object and set the points from the vertices
     points = vtk.vtkPoints()
     for vertex in vertices:
@@ -273,9 +275,25 @@ def create_mesh_and_vectorfield_actors(vertices, triangles, vertex_normals):
     mesh_mapper = vtk.vtkPolyDataMapper()
     mesh_mapper.SetInputData(poly_data)
 
+    if colormap != None and nodeData.all() != None:
+        points_array = numpy_to_vtk(nodeData, deep=True)
+        points_array.SetName("array")
+        poly_data.GetPointData().AddArray(points_array)
+        mesh_mapper.ScalarVisibilityOn()
+        mesh_mapper.SetScalarModeToUsePointFieldData()
+        mesh_mapper.InterpolateScalarsBeforeMappingOn()
+        s = 0.005
+        mesh_mapper.SetScalarRange([0, s])
+        mesh_mapper.SelectColorArray("array")
+        mesh_mapper.SetLookupTable(colormap)
+
     mesh_actor = vtk.vtkActor()
     mesh_actor.SetMapper(mesh_mapper)
 
+    return mesh_actor
+
+
+def create_vectorfield_actor(vertices, vertex_normals):
     # Create a vtkArrowSource to represent normals as arrows
     arrow_source = vtk.vtkArrowSource()
     arrow_source.SetTipResolution(16)
@@ -311,5 +329,4 @@ def create_mesh_and_vectorfield_actors(vertices, triangles, vertex_normals):
     arrow_actor.SetMapper(arrow_mapper)
     arrow_actor.GetProperty().SetColor(1.0, 0.5, 0.5)  # Set arrow color to red
 
-    return mesh_actor, arrow_actor
-
+    return arrow_actor
