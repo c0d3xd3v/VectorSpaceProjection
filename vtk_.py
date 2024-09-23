@@ -5,8 +5,9 @@ import numpy as np
 def render_actors(actors, camera_position=[1, 0, 0]):
     # VTK Visualization
     renderer = vtk.vtkRenderer()
-    renderer.SetBackground(1,1,1)  # Hintergrundfarbe auf weiß setzen
-    # Konfiguriere Depth Testing
+    renderer.SetBackground(1, 1, 1)  # White background
+
+    # Configure depth testing for better rendering of overlapping objects
     renderer.SetUseDepthPeeling(True)
     renderer.SetMaximumNumberOfPeels(4)
     renderer.SetOcclusionRatio(0.1)
@@ -14,30 +15,42 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     cam = renderer.GetActiveCamera()
     cam.SetViewUp(camera_position)
 
+    # Customize actors' appearance
     for actor in actors:
-        actor.GetProperty().SetAmbient(0.7)
-        actor.GetProperty().SetDiffuse(0.5)
+        prop = actor.GetProperty()
+        prop.SetAmbient(0.3)    # Slight ambient reflection for smoother shading
+        prop.SetDiffuse(0.7)    # Strong diffuse reflection
+        prop.SetSpecular(0.2)   # Add some specular highlights
+        prop.SetSpecularPower(10)  # Control sharpness of specular highlights
+        
+        # Assigning a nice color scheme to each actor
+        #prop.SetColor(np.random.rand(), np.random.rand(), np.random.rand())  # Random color for visual variety
+        prop.SetColor(0.85, 0.85, 0.85)  # Random color for visual variety
+
         renderer.AddActor(actor)
 
-    # Renderer-Instanz erstellen
+    # Render window setup
     render_window = vtk.vtkRenderWindow()
     width, height = 800, 800
     render_window.SetSize(width, height)
     viewport_max_sizes = render_window.GetScreenSize()
     render_window.SetPosition(int(viewport_max_sizes[0]/2 - width), int(viewport_max_sizes[1]/2 - height))
-    print(viewport_max_sizes)
+    
     render_window.AddRenderer(renderer)
 
-    # RenderWindowInteractor erstellen
+    # Interactor setup
     render_window_interactor = vtk.vtkRenderWindowInteractor()
     render_window_interactor.SetRenderWindow(render_window)
     render_window_interactor.SetInteractorStyle(vtk.vtkInteractorStyleTrackballCamera())
 
+    # Add lighting at camera
     light, update_light_position = create_light_source_at_camera(renderer, renderer.GetActiveCamera())
 
+    # Shadows for enhanced realism
     shadows = vtk.vtkShadowMapPass()
     seq = vtk.vtkSequencePass()
 
+    
     passes = vtk.vtkRenderPassCollection()
     passes.AddItem(shadows.GetShadowMapBakerPass())
     passes.AddItem(shadows)
@@ -45,10 +58,9 @@ def render_actors(actors, camera_position=[1, 0, 0]):
 
     cameraP = vtk.vtkCameraPass()
     cameraP.SetDelegatePass(seq)
-    
     renderer.SetPass(cameraP)
 
-    render_window.SetMultiSamples(8)
+    render_window.SetMultiSamples(8)  # Anti-aliasing for smoother edges
     render_window.Render()
     renderer.ResetCamera()
 
@@ -58,23 +70,25 @@ def render_actors(actors, camera_position=[1, 0, 0]):
 
 def create_light_source_at_camera(renderer, camera):
     """Creates a light source and positions it at the camera's position."""
-
     colors = vtk.vtkNamedColors()
-    colors.SetColor('HighNoonSun', [255, 255, 251, 255])  # Color temp. 5400°K
-    colors.SetColor('100W Tungsten', [255, 214, 170, 255])  # Color temp. 2850°K
+
+    # Using a warmer white light for more natural look
+    colors.SetColor('WarmLight', [255, 244, 229, 255])  # Soft warm light
+    colors.SetColor('CoolLight', [200, 200, 255, 255])  # Cooler, bluish light
 
     light = vtk.vtkLight()
     light.SetFocalPoint(0, 0, 0)
-    light.SetPosition(0.0, -3.0, 0.0)
-    light.SetColor(colors.GetColor3d('100W Tungsten'))
-    light.SetIntensity(0.25)
+    light_position = np.array(camera.GetPosition()) + np.array([0.1, 0.1, 0.1])
+    light.SetPosition(light_position[0], light_position[1], light_position[2])
+    light.SetColor(colors.GetColor3d('WarmLight'))  # Warm light for a nice contrast
+    light.SetIntensity(1.1)  # Slightly stronger light
     renderer.AddLight(light)
 
+    # Adjust light position dynamically if the camera moves
     def update_light_position(*args):
-        light_position = camera.GetPosition()
-        light_position += np.array([0.1, 0.1, 0.1])
+        light_position = np.array(camera.GetPosition()) + np.array([0.1, 0.1, 0.1])
         light.SetPosition(light_position[0], light_position[1], light_position[2])
-        renderer.GetRenderWindow().Render()  # Re-render to apply the changes
+        renderer.GetRenderWindow().Render()  # Re-render to apply changes
 
     camera.AddObserver('ModifiedEvent', update_light_position)
 
@@ -143,6 +157,7 @@ def create_bounding_box_ground_plane(renderer):
     plane_actor.Modified()
     # Add the plane to the renderer
     renderer.AddActor(plane_actor)
+
 
 def create_arrow_actor(start_point, end_point, color):
     # Erstellen der Pfeilquelle
@@ -285,7 +300,7 @@ def create_mesh_and_vectorfield_actors(vertices, triangles, vertex_normals):
     glyph.SetSourceConnection(arrow_source.GetOutputPort())
     glyph.SetInputData(normals_polydata)
     glyph.SetVectorModeToUseVector()  # Use the normals stored in the polydata
-    glyph.SetScaleFactor(0.1)  # Scale the arrows
+    glyph.SetScaleFactor(0.05)  # Scale the arrows
     glyph.OrientOn()  # Align arrows with normals
 
     # Create a mapper and actor for the arrows (normals)
