@@ -5,6 +5,14 @@ import numpy as np
 from vtkmodules.util.numpy_support import numpy_to_vtk
 
 def render_actors(actors, camera_position=[1, 0, 0]):
+    """
+    renders each actor in the actors list, seen from 
+    camera position.
+    Args:
+        actors (list): list of vtk actors
+        camera_position (list, optional): poisition of the camera the scene is 
+                                          viewed from. Defaults to [1, 0, 0].
+    """
     # VTK Visualization
     renderer = vtk.vtkRenderer()
     renderer.SetBackground(1, 1, 1)  # White background
@@ -20,23 +28,23 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     # Customize actors' appearance
     for actor in actors:
         prop = actor.GetProperty()
-        prop.SetAmbient(0.3)    # Slight ambient reflection for smoother shading
-        prop.SetDiffuse(0.7)    # Strong diffuse reflection
-        prop.SetSpecular(0.2)   # Add some specular highlights
-        prop.SetSpecularPower(10)  # Control sharpness of specular highlights
-        
-        # Assigning a nice color scheme to each actor
-        #prop.SetColor(np.random.rand(), np.random.rand(), np.random.rand())  # Random color for visual variety
-        prop.SetColor(0.85, 0.85, 0.85)  # Random color for visual variety
-
+        prop.SetAmbient(0.0)    # Slight ambient reflection for smoother shading
+        prop.SetDiffuse(1.0)    # Strong diffuse reflection
+        #prop.SetSpecular(0.2)   # Add some specular highlights
+        #prop.SetSpecularPower(10)  # Control sharpness of specular highlights        
+        prop.SetColor(0.85, 0.85, 0.85)
         renderer.AddActor(actor)
+
+    #create_bounding_box_ground_plane(renderer)
 
     # Render window setup
     render_window = vtk.vtkRenderWindow()
     width, height = 800, 800
     render_window.SetSize(width, height)
     viewport_max_sizes = render_window.GetScreenSize()
-    render_window.SetPosition(int(viewport_max_sizes[0]/2 - width), int(viewport_max_sizes[1]/2 - height))
+    xwpos = int(viewport_max_sizes[0]/2 - width)
+    ywpos = int(viewport_max_sizes[1]/2 - height)
+    render_window.SetPosition(xwpos, ywpos)
     
     render_window.AddRenderer(renderer)
 
@@ -46,13 +54,12 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     render_window_interactor.SetInteractorStyle(vtk.vtkInteractorStyleTrackballCamera())
 
     # Add lighting at camera
-    light, update_light_position = create_light_source_at_camera(renderer, renderer.GetActiveCamera())
+    create_light_source_at_camera(renderer, renderer.GetActiveCamera())
 
     # Shadows for enhanced realism
     shadows = vtk.vtkShadowMapPass()
     seq = vtk.vtkSequencePass()
 
-    
     passes = vtk.vtkRenderPassCollection()
     passes.AddItem(shadows.GetShadowMapBakerPass())
     passes.AddItem(shadows)
@@ -62,7 +69,7 @@ def render_actors(actors, camera_position=[1, 0, 0]):
     cameraP.SetDelegatePass(seq)
     renderer.SetPass(cameraP)
 
-    render_window.SetMultiSamples(8)  # Anti-aliasing for smoother edges
+    render_window.SetMultiSamples(2)  # Anti-aliasing for smoother edges
     render_window.Render()
     renderer.ResetCamera()
 
@@ -83,23 +90,34 @@ def create_light_source_at_camera(renderer, camera, offset=[0.1, 0.1, 0.1]):
     light_position = np.array(camera.GetPosition()) + np.array(offset)
     light.SetPosition(light_position[0], light_position[1], light_position[2])
     light.SetColor(colors.GetColor3d('WarmLight'))  # Warm light for a nice contrast
-    light.SetIntensity(1.1)  # Slightly stronger light
+    light.SetIntensity(1.0)  # Slightly stronger light
     renderer.AddLight(light)
 
     # Adjust light position dynamically if the camera moves
     def update_light_position(*args):
         light_position = np.array(camera.GetPosition()) + np.array(offset)
         light.SetPosition(light_position[0], light_position[1], light_position[2])
-        renderer.GetRenderWindow().Render()  # Re-render to apply changes
+        light.Modified()
 
     camera.AddObserver('ModifiedEvent', update_light_position)
 
     return light, update_light_position
 
 
-def create_bounding_box_ground_plane(renderer):
+def create_bounding_box_ground_plane(renderer, normal_vector=[1, 0, 0]):
+    """
+    Creates a ground plane based on the bounding box of the scene's actors,
+    centered under all actors with a prescribed normal vector.
+    
+    Parameters:
+    renderer : vtkRenderer
+        The renderer containing all the actors.
+    normal_vector : list or array-like
+        A 3-element list defining the normal vector of the plane.
+    """
     # Initialize bounds for the entire scene (actors)
-    bounds = [float('inf'), -float('inf'), float('inf'), -float('inf'), float('inf'), -float('inf')]
+    bounds = [float('inf'), -float('inf'), float('inf'), -float('inf'), 
+              float('inf'), -float('inf')]
 
     # Iterate over all actors to get the collective bounding box
     actors = renderer.GetActors()
@@ -109,23 +127,35 @@ def create_bounding_box_ground_plane(renderer):
         actor = actors.GetNextActor()
         actor_bounds = actor.GetBounds()
 
-        s = 2.0
-        # Update the global bounds
-        bounds[0] = min(bounds[0], s*actor_bounds[0])  # X min
-        bounds[1] = max(bounds[1], s*actor_bounds[1])  # X max
-        bounds[2] = min(bounds[2], s*actor_bounds[2])  # Y min
-        bounds[3] = max(bounds[3], s*actor_bounds[3])  # Y max
-        bounds[4] = min(bounds[4], s*actor_bounds[4])  # Z min (ground)
-        bounds[5] = max(bounds[5], s*actor_bounds[5])  # Z max
+        # Update the global bounds based on actor bounds
+        bounds[0] = min(bounds[0], actor_bounds[0])  # X min
+        bounds[1] = max(bounds[1], actor_bounds[1])  # X max
+        bounds[2] = min(bounds[2], actor_bounds[2])  # Y min
+        bounds[3] = max(bounds[3], actor_bounds[3])  # Y max
+        bounds[4] = min(bounds[4], actor_bounds[4])  # Z min (ground)
+        bounds[5] = max(bounds[5], actor_bounds[5])  # Z max
 
-    offset = 0.1
+    offset = 0.1  # A small offset to lower the plane slightly under the actors
 
-    # Create a plane at the Z-min (bottom of the bounding box)
+    # Calculate the center of the bounding box in the X and Y directions
+    center_x = (bounds[0] + bounds[1]) / 2.0  # X center
+    center_y = (bounds[2] + bounds[3]) / 2.0  # Y center
+    z_min = bounds[4]  # Use the minimum Z bound for the plane's height
+
+    # Calculate the width and height of the plane (spanning X and Y dimensions)
+    width = bounds[1] - bounds[0]  # Width of the bounding box in X
+    height = bounds[3] - bounds[2]  # Height of the bounding box in Y
+
+    # Create a plane at the center of the bounding box
     plane = vtk.vtkPlaneSource()
-    plane.SetOrigin(bounds[0], bounds[2], bounds[4] - offset)  # Bottom-left corner at Z-min
-    plane.SetPoint1(bounds[1], bounds[2], bounds[4] - offset)  # Bottom-right corner at Z-min
-    plane.SetPoint2(bounds[0], bounds[3], bounds[4] - offset)  # Top-left corner at Z-min
-    plane.SetResolution(10, 10)
+    plane.SetOrigin(center_x - width / 2.0, center_y - height / 2.0, z_min - offset)
+    plane.SetPoint1(center_x + width / 2.0, center_y - height / 2.0, z_min - offset)
+    plane.SetPoint2(center_x - width / 2.0, center_y + height / 2.0, z_min - offset)
+
+    # Set the prescribed normal vector
+    plane.SetNormal(normal_vector[0], normal_vector[1], normal_vector[2])
+
+    plane.SetResolution(10, 10)  # Set resolution for finer mesh
 
     # Create a mapper and actor for the plane
     plane_mapper = vtk.vtkPolyDataMapper()
@@ -134,29 +164,12 @@ def create_bounding_box_ground_plane(renderer):
     plane_actor = vtk.vtkActor()
     plane_actor.SetMapper(plane_mapper)
 
-    # Get the points defining the plane
-    origin = np.array([bounds[0], bounds[2], bounds[4] - offset])
-    point1 = np.array([bounds[1], bounds[2], bounds[4] - offset])
-    point2 = np.array([bounds[0], bounds[3], bounds[4] - offset])
+    # Customize the appearance of the plane
+    plane_actor.GetProperty().SetColor(1.0, 1.0, 1.0)  # White color
+    plane_actor.GetProperty().SetAmbient(0.7)          # High ambient reflection
+    plane_actor.GetProperty().SetDiffuse(0.9)          # Strong diffuse reflection
+    #plane_actor.GetProperty().SetOpacity(0.5)          # 50% transparency
 
-    # Compute vectors from the origin
-    vec1 = point1 - origin
-    vec2 = point2 - origin
-
-    # Compute normal
-    normal = geo.compute_normal(vec1, vec2)
-    plane.SetNormal(normal[0], normal[1], normal[2])
-
-    # Get the background color from the renderer
-    #background_color = renderer.GetBackground()
-
-    # Set the plane's color to match the background
-    plane_actor.GetProperty().SetColor(1.0, 1.0, 1.0)
-    plane_actor.GetProperty().SetAmbient(0.7)
-    plane_actor.GetProperty().SetDiffuse(0.9)
-    #plane_actor.GetProperty().SetOpacity(0.5)  # 50% transparency
-
-    plane_actor.Modified()
     # Add the plane to the renderer
     renderer.AddActor(plane_actor)
 
@@ -276,14 +289,16 @@ def create_mesh_actor(vertices, triangles, nodeData=None, colormap=None):
     mesh_mapper.SetInputData(poly_data)
 
     if colormap != None and nodeData.all() != None:
+        max_norms = np.max(np.abs(nodeData), axis=1)
+        global_max_norm = np.max(max_norms)
         points_array = numpy_to_vtk(nodeData, deep=True)
         points_array.SetName("array")
         poly_data.GetPointData().AddArray(points_array)
+        
         mesh_mapper.ScalarVisibilityOn()
         mesh_mapper.SetScalarModeToUsePointFieldData()
         mesh_mapper.InterpolateScalarsBeforeMappingOn()
-        s = 0.005
-        mesh_mapper.SetScalarRange([0, s])
+        mesh_mapper.SetScalarRange([0, global_max_norm])
         mesh_mapper.SelectColorArray("array")
         mesh_mapper.SetLookupTable(colormap)
 
@@ -293,7 +308,7 @@ def create_mesh_actor(vertices, triangles, nodeData=None, colormap=None):
     return mesh_actor
 
 
-def create_vectorfield_actor(vertices, vertex_normals):
+def create_vectorfield_actor(vertices, vector_data, colormap=None, scale=0.1):
     # Create a vtkArrowSource to represent normals as arrows
     arrow_source = vtk.vtkArrowSource()
     arrow_source.SetTipResolution(16)
@@ -304,29 +319,147 @@ def create_vectorfield_actor(vertices, vertex_normals):
     normal_vectors = vtk.vtkDoubleArray()
     normal_vectors.SetNumberOfComponents(3)  # 3D vectors
 
+    # Store the magnitudes of the vectors for colormap
+    magnitudes = vtk.vtkDoubleArray()
+    magnitudes.SetName("Magnitudes")
+    magnitudes.SetNumberOfComponents(1)
+
     for i in range(len(vertices)):
         normal_points.InsertNextPoint(vertices[i])
-        normal_vectors.InsertNextTuple(vertex_normals[i])
+        normal_vectors.InsertNextTuple(vector_data[i])
+        # Calculate and store the magnitude for coloring
+        magnitudes.InsertNextValue(np.linalg.norm(vector_data[i]))
 
     # Create polydata for the glyphs (normals visualization)
     normals_polydata = vtk.vtkPolyData()
     normals_polydata.SetPoints(normal_points)
     normals_polydata.GetPointData().SetVectors(normal_vectors)
+    # Add the magnitudes as scalar data
+    normals_polydata.GetPointData().SetScalars(magnitudes)
 
     # Use vtkGlyph3D to generate arrows at each vertex position along the normal
     glyph = vtk.vtkGlyph3D()
     glyph.SetSourceConnection(arrow_source.GetOutputPort())
     glyph.SetInputData(normals_polydata)
     glyph.SetVectorModeToUseVector()  # Use the normals stored in the polydata
-    glyph.SetScaleFactor(0.05)  # Scale the arrows
     glyph.OrientOn()  # Align arrows with normals
+    glyph.SetScaleFactor(scale)  # Scale the arrows
+    glyph.ScalingOn()
+    glyph.SetScaleModeToDataScalingOff()
 
     # Create a mapper and actor for the arrows (normals)
     arrow_mapper = vtk.vtkPolyDataMapper()
     arrow_mapper.SetInputConnection(glyph.GetOutputPort())
 
+    # If colormap and vector data is provided
+    if colormap is not None and vector_data is not None:
+        # Turn on scalar visibility to use magnitudes for coloring
+        arrow_mapper.ScalarVisibilityOn()
+        arrow_mapper.SetScalarModeToUsePointData()  # Use the scalars for coloring
+        arrow_mapper.SetScalarRange(magnitudes.GetRange())  # Set the range for colormap
+        arrow_mapper.SetLookupTable(colormap)  # Apply colormap
+    else:
+        arrow_mapper.ScalarVisibilityOff()
+
     arrow_actor = vtk.vtkActor()
     arrow_actor.SetMapper(arrow_mapper)
-    arrow_actor.GetProperty().SetColor(1.0, 0.5, 0.5)  # Set arrow color to red
 
     return arrow_actor
+
+
+def compute_vertex_normals_with_sharp_edges(vertices, triangles, feature_angle=30.0):
+    """
+    Compute vertex normals with respect to sharp edges.
+    
+    :param vertices: A numpy array of shape (n_vertices, 3) representing the vertex positions.
+    :param triangles: A numpy array of shape (n_triangles, 3) representing the triangle vertex indices.
+    :param feature_angle: The angle threshold (in degrees) to detect sharp edges.
+    :return: A numpy array of shape (n_vertices, 3) containing the computed vertex normals.
+    """
+    vertices = np.array(vertices)
+    triangles = np.array(triangles)
+    # Convert feature angle to radians
+    feature_angle_rad = np.radians(feature_angle)
+
+    # Compute face normals
+    v0 = vertices[triangles[:, 0]]
+    v1 = vertices[triangles[:, 1]]
+    v2 = vertices[triangles[:, 2]]
+
+    face_normals = np.cross(v1 - v0, v2 - v0)
+    face_normals /= np.linalg.norm(face_normals, axis=1, keepdims=True)
+
+    # Create a dictionary to store the normals per vertex
+    vertex_normals = {i: [] for i in range(len(vertices))}
+
+    # Associate face normals with each vertex
+    for i, triangle in enumerate(triangles):
+        for vertex_index in triangle:
+            vertex_normals[vertex_index].append(face_normals[i])
+
+    # Compute the final vertex normals, splitting normals at sharp edges
+    final_normals = np.zeros_like(vertices)
+
+    for vertex_index, normals in vertex_normals.items():
+        # Convert the list of normals to a numpy array
+        normals = np.array(normals)
+
+        # Compute pairwise angles between normals
+        angles = np.arccos(np.clip(np.dot(normals, normals.T), -1.0, 1.0))
+
+        # Average normals that are within the feature angle threshold
+        avg_normal = np.zeros(3)
+        for normal in normals:
+            within_angle = np.all(angles <= feature_angle_rad, axis=1)
+            if np.any(within_angle):
+                avg_normal += normal
+        avg_normal /= np.linalg.norm(avg_normal)
+        
+        final_normals[vertex_index] = avg_normal
+
+    return final_normals
+
+
+def create_vtk_actor_with_vertex_normals(vertices, triangles, vertex_normals):
+    """
+    Create a VTK actor for the mesh with per-vertex normals.
+    """
+    # Create vtkPoints object
+    points = vtk.vtkPoints()
+    for vertex in vertices:
+        points.InsertNextPoint(vertex)
+
+    # Create vtkCellArray for triangles
+    triangles_vtk = vtk.vtkCellArray()
+    for triangle in triangles:
+        triangle_vtk = vtk.vtkTriangle()
+        triangle_vtk.GetPointIds().SetId(0, triangle[0])
+        triangle_vtk.GetPointIds().SetId(1, triangle[1])
+        triangle_vtk.GetPointIds().SetId(2, triangle[2])
+        triangles_vtk.InsertNextCell(triangle_vtk)
+
+    # Create vtkPolyData object to store the mesh
+    poly_data = vtk.vtkPolyData()
+    poly_data.SetPoints(points)
+    poly_data.SetPolys(triangles_vtk)
+
+    # Create vtkFloatArray for normals
+    normals_array = vtk.vtkFloatArray()
+    normals_array.SetNumberOfComponents(3)
+    normals_array.SetName("Normals")
+
+    # Insert vertex normals into the vtkFloatArray
+    for normal in vertex_normals:
+        normals_array.InsertNextTuple(normal)
+
+    # Assign the vertex normals to the poly data
+    poly_data.GetPointData().SetNormals(normals_array)
+
+    # Create the mapper and actor
+    mesh_mapper = vtk.vtkPolyDataMapper()
+    mesh_mapper.SetInputData(poly_data)
+
+    mesh_actor = vtk.vtkActor()
+    mesh_actor.SetMapper(mesh_mapper)
+
+    return mesh_actor

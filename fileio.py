@@ -15,6 +15,7 @@ def load_triangle_mesh(filepath):
 
 
 def load_mesh_vtk_unstructured_grid(filepath):
+    # Load the unstructured grid
     reader = vtk.vtkUnstructuredGridReader()
     reader.SetFileName(filepath)
     reader.Update()
@@ -22,6 +23,7 @@ def load_mesh_vtk_unstructured_grid(filepath):
     unstructured_grid: vtk.vtkUnstructuredGrid = reader.GetOutput()
     points_vtk = unstructured_grid.GetPoints()
 
+    # Collect all triangles from the grid
     triangles_vtk = []
     for i in range(unstructured_grid.GetNumberOfCells()):
         cell = unstructured_grid.GetCell(i)
@@ -31,30 +33,47 @@ def load_mesh_vtk_unstructured_grid(filepath):
 
     # Convert triangles list to a NumPy array
     triangles = np.array(triangles_vtk)
+
+    # Get the original vertices as a NumPy array
     vertices = vtk_to_numpy(points_vtk.GetData())
 
+    # Step 1: Find all unique vertex indices referenced by triangles
+    used_vertex_indices = np.unique(triangles)
 
+    # Step 2: Create a mapping from old vertex indices to new compacted indices
+    old_to_new_indices = {old_idx: new_idx for new_idx, old_idx in enumerate(used_vertex_indices)}
+
+    # Step 3: Update the triangles to reference the new vertex indices
+    compacted_triangles = np.vectorize(old_to_new_indices.get)(triangles)
+
+    # Step 4: Create a new compact vertex array with only the referenced vertices
+    compacted_vertices = vertices[used_vertex_indices]
+
+    # Step 5: Update the point data arrays (associated with vertices)
     point_data = unstructured_grid.GetPointData()
     num_point_data_arrays = point_data.GetNumberOfArrays()
-    print(f"Number of PointData arrays: {num_point_data_arrays}")
-
     point_data_arrays = {}
+    
     for i in range(num_point_data_arrays):
         array_name = point_data.GetArrayName(i)
         array = point_data.GetArray(i)
         numpy_array = vtk_to_numpy(array)
-        
+
         num_components = array.GetNumberOfComponents()
         if num_components > 1:
             numpy_array = numpy_array.reshape(-1, num_components)
         else:
             numpy_array = numpy_array.flatten()
-        point_data_arrays[array_name] = numpy_array
+
+        # Only keep the point data for the used vertices
+        compacted_data = numpy_array[used_vertex_indices]
+
+        point_data_arrays[array_name] = compacted_data
 
         data_type = "Scalar" if num_components == 1 else f"Vector (dim {num_components})" if num_components == 3 else f"Tensor (dim {num_components})"
-        print(f"Stored {array_name} as {data_type} with shape {numpy_array.shape}")
+        print(f"Stored {array_name} as {data_type} with shape {compacted_data.shape}")
 
-    return vertices.tolist(), triangles.tolist(), point_data_arrays
+    return compacted_vertices.tolist(), compacted_triangles.tolist(), point_data_arrays
 
 
 # Funktion zum Erstellen eines vtkColorTransferFunction aus XML
